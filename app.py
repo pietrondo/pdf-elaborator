@@ -5,6 +5,8 @@ from werkzeug.utils import secure_filename
 from pdf_processor import PDFProcessor
 import tempfile
 import shutil
+import time
+import threading
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size
@@ -21,6 +23,48 @@ ALLOWED_EXTENSIONS = {'pdf'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def cleanup_temp_files():
+    """Pulisce i file temporanei più vecchi di 1 ora"""
+    while True:
+        try:
+            current_time = time.time()
+            temp_files_map = getattr(app, 'temp_files_map', {})
+            files_to_remove = []
+            
+            for file_id, file_path in temp_files_map.items():
+                if os.path.exists(file_path):
+                    file_age = current_time - os.path.getctime(file_path)
+                    if file_age > 3600:  # 1 hour
+                        try:
+                            os.remove(file_path)
+                            files_to_remove.append(file_id)
+                        except:
+                            pass
+                else:
+                    files_to_remove.append(file_id)
+            
+            for file_id in files_to_remove:
+                temp_files_map.pop(file_id, None)
+            
+            # Pulisci anche i file nella cartella temp
+            for filename in os.listdir(app.config['TEMP_FOLDER']):
+                file_path = os.path.join(app.config['TEMP_FOLDER'], filename)
+                if os.path.isfile(file_path):
+                    file_age = current_time - os.path.getctime(file_path)
+                    if file_age > 3600:  # 1 hour
+                        try:
+                            os.remove(file_path)
+                        except:
+                            pass
+        except:
+            pass
+        
+        time.sleep(300)  # Check every 5 minutes
+
+# Start cleanup thread
+cleanup_thread = threading.Thread(target=cleanup_temp_files, daemon=True)
+cleanup_thread.start()
 
 @app.route('/')
 def index():
@@ -107,6 +151,92 @@ def clean_pdf():
     
     except Exception as e:
         return jsonify({'error': f'Errore durante la pulizia: {str(e)}'}), 500
+
+@app.route('/api/upload-pdfs', methods=['POST'])
+def upload_pdfs():
+    """Carica e analizza più file PDF per la gestione visuale delle pagine"""
+    try:
+        if 'files' not in request.files:
+            return jsonify({'error': 'Nessun file selezionato'}), 400
+        
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'error': 'Nessun file valido caricato'}), 400
+        
+        pdf_data = []
+        
+        for file in files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                file_id = str(uuid.uuid4())
+                temp_path = os.path.join(app.config['TEMP_FOLDER'], f"{file_id}_{filename}")
+                file.save(temp_path)
+                
+                # Converti in immagini per l'anteprima
+                try:
+                    images = pdf_processor.convert_pdf_to_images(temp_path)
+                    info = pdf_processor.get_pdf_info(temp_path)
+                    
+                    # Store the file path for later use
+                    temp_files_map = getattr(app, 'temp_files_map', {})
+                    temp_files_map[file_id] = temp_path
+                    app.temp_files_map = temp_files_map
+                    
+                    pdf_data.append({
+                        'file_id': file_id,
+                        'filename': filename,
+                        'num_pages': info['num_pages'],
+                        'file_size': info['file_size'],
+                        'images': images
+                    })
+                except Exception as e:
+                    # Rimuovi il file se c'è stato un errore
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    continue
+        
+        if not pdf_data:
+            return jsonify({'error': 'Nessun PDF valido caricato'}), 400
+        
+        return jsonify({'pdfs': pdf_data})
+    
+    except Exception as e:
+        return jsonify({'error': f'Errore durante il caricamento: {str(e)}'}), 500
+
+@app.route('/api/compose-pages', methods=['POST'])
+def compose_pages():
+    """Compone un nuovo PDF dalle pagine selezionate"""
+    try:
+        data = request.get_json()
+        selected_pages = data.get('selected_pages', [])
+        
+        if not selected_pages:
+            return jsonify({'error': 'Nessuna pagina selezionata'}), 400
+        
+        # Recupera i file temporanei
+        temp_files_map = getattr(app, 'temp_files_map', {})
+        
+        # Prepara i dati per il processor
+        page_selections = []
+        for page_info in selected_pages:
+            file_id = page_info['file_id']
+            
+            if file_id not in temp_files_map:
+                return jsonify({'error': f'File {file_id} non trovato'}), 400
+            
+            page_selections.append({
+                'file_path': temp_files_map[file_id],
+                'page': page_info['page']
+            })
+        
+        # Salva il nuovo PDF
+        output_path = os.path.join(app.config['TEMP_FOLDER'], f"composed_{uuid.uuid4()}.pdf")
+        pdf_processor.create_pdf_from_pages(page_selections, output_path)
+        
+        return send_file(output_path, as_attachment=True, download_name='composed_pages.pdf')
+    
+    except Exception as e:
+        return jsonify({'error': f'Errore durante la composizione: {str(e)}'}), 500
 
 @app.route('/api/pages', methods=['POST'])
 def manage_pages():

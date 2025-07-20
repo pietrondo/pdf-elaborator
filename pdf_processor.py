@@ -128,24 +128,27 @@ class PDFProcessor:
         
         return sorted(list(set(pages)))  # Remove duplicates and sort
 
-    def convert_pdf_to_images(self, input_path, dpi=150):
-        """Converte le pagine del PDF in immagini base64"""
+    def convert_pdf_to_images(self, input_path, dpi=100, max_size=(300, 400)):
+        """Converte le pagine del PDF in immagini base64 ottimizzate"""
         try:
-            # Converte PDF in immagini usando pdf2image
+            # Converte PDF in immagini usando pdf2image con DPI ridotto per le anteprime
             images = convert_from_path(input_path, dpi=dpi)
             image_data = []
             
             for i, image in enumerate(images):
-                # Converti l'immagine in base64
+                # Ridimensiona l'immagine per l'anteprima
+                image.thumbnail(max_size, Image.Resampling.LANCZOS)
+                
+                # Converti l'immagine in base64 con qualità ottimizzata
                 buffered = BytesIO()
-                image.save(buffered, format="PNG")
+                image.save(buffered, format="JPEG", quality=85, optimize=True)
                 img_str = base64.b64encode(buffered.getvalue()).decode()
                 
                 image_data.append({
                     'page': i + 1,
                     'width': image.width,
                     'height': image.height,
-                    'data': f"data:image/png;base64,{img_str}"
+                    'data': f"data:image/jpeg;base64,{img_str}"
                 })
             
             return image_data
@@ -194,3 +197,23 @@ class PDFProcessor:
             
         except Exception as e:
             raise Exception(f"Errore nella rimozione delle aree: {str(e)}")
+
+    def create_pdf_from_pages(self, page_selections, output_path):
+        """Crea un nuovo PDF da una selezione di pagine da diversi file"""
+        try:
+            writer = PdfWriter()
+            
+            for selection in page_selections:
+                file_path = selection['file_path']
+                page_number = selection['page'] - 1  # Convert to 0-based
+                
+                with open(file_path, 'rb') as file:
+                    reader = PdfReader(file)
+                    if 0 <= page_number < len(reader.pages):
+                        writer.add_page(reader.pages[page_number])
+            
+            with open(output_path, 'wb') as output_file:
+                writer.write(output_file)
+                
+        except Exception as e:
+            raise Exception(f"Errore nella creazione del PDF: {str(e)}")
