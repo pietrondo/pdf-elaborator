@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  pdf-elaborator:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./temp:/app/temp
+    environment:
+      - FLASK_ENV=production
+      - UPLOAD_FOLDER=/app/uploads
+      - TEMP_FOLDER=/app/temp
+    restart: unless-stopped

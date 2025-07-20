@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="text-center mb-5">
+            <h1 class="display-4 text-primary">
+                <i class="fas fa-file-pdf me-3"></i>PDF Elaborator
+            </h1>
+            <p class="lead">Strumento completo per gestire i tuoi file PDF</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <i class="fas fa-layer-group fa-3x text-primary"></i>
+                        </div>
+                        <h5 class="card-title">Unisci PDF</h5>
+                        <p class="card-text">Combina più file PDF in un singolo documento</p>
+                        <a href="{{ url_for('merge_page') }}" class="btn btn-primary">Inizia</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <i class="fas fa-eraser fa-3x text-success"></i>
+                        </div>
+                        <h5 class="card-title">Pulisci PDF</h5>
+                        <p class="card-text">Rimuovi informazioni sensibili e watermark</p>
+                        <a href="{{ url_for('clean_page') }}" class="btn btn-success">Inizia</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <i class="fas fa-copy fa-3x text-warning"></i>
+                        </div>
+                        <h5 class="card-title">Gestisci Pagine</h5>
+                        <p class="card-text">Estrai o rimuovi pagine specifiche dai PDF</p>
+                        <a href="{{ url_for('pages_page') }}" class="btn btn-warning">Inizia</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-5">
+            <div class="col-md-8 mx-auto">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle me-2"></i>Come funziona:</h6>
+                    <ul class="mb-0">
+                        <li>Seleziona l'operazione desiderata</li>
+                        <li>Carica i tuoi file PDF (max 50MB per file)</li>
+                        <li>Configura le opzioni se necessario</li>
+                        <li>Scarica il risultato</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

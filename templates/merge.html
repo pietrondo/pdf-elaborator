@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Unisci PDF - PDF Elaborator{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-layer-group me-2"></i>Unisci PDF</h4>
+            </div>
+            <div class="card-body">
+                <form id="mergeForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="files" class="form-label">Seleziona file PDF da unire (minimo 2):</label>
+                        <input type="file" class="form-control" id="files" name="files" multiple accept=".pdf" required>
+                        <div class="form-text">Puoi selezionare più file PDF. Verranno uniti nell'ordine di selezione.</div>
+                    </div>
+
+                    <div id="fileList" class="mb-3"></div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-layer-group me-2"></i>Unisci PDF
+                        </button>
+                    </div>
+                </form>
+
+                <div id="loading" class="text-center mt-3" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Elaborazione in corso...</span>
+                    </div>
+                    <p class="mt-2">Unendo i PDF, attendere...</p>
+                </div>
+
+                <div id="result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <div class="alert alert-info">
+                <h6><i class="fas fa-lightbulb me-2"></i>Suggerimenti:</h6>
+                <ul class="mb-0">
+                    <li>I file vengono uniti nell'ordine in cui li selezioni</li>
+                    <li>Puoi riordinare i file trascinandoli nella lista</li>
+                    <li>Dimensione massima per file: 50MB</li>
+                    <li>Tutti i metadati verranno preservati</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('mergeForm');
+    const filesInput = document.getElementById('files');
+    const fileList = document.getElementById('fileList');
+    const loading = document.getElementById('loading');
+    const result = document.getElementById('result');
+
+    filesInput.addEventListener('change', function() {
+        displayFileList();
+    });
+
+    function displayFileList() {
+        const files = Array.from(filesInput.files);
+        if (files.length === 0) {
+            fileList.innerHTML = '';
+            return;
+        }
+
+        let html = '<h6>File selezionati:</h6><ul class="list-group">';
+        files.forEach((file, index) => {
+            html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-file-pdf text-danger me-2"></i>${file.name}</span>
+                <span class="badge bg-secondary">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
+            </li>`;
+        });
+        html += '</ul>';
+        fileList.innerHTML = html;
+    }
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const files = filesInput.files;
+        if (files.length < 2) {
+            showAlert('Seleziona almeno 2 file PDF per l\'unione.', 'warning');
+            return;
+        }
+
+        const formData = new FormData();
+        for (let file of files) {
+            formData.append('files', file);
+        }
+
+        loading.style.display = 'block';
+        result.innerHTML = '';
+
+        fetch('/api/merge', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.blob();
+            } else {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Errore durante l\'unione');
+                });
+            }
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'merged.pdf';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showAlert('PDF unito con successo! Il download dovrebbe iniziare automaticamente.', 'success');
+        })
+        .catch(error => {
+            showAlert(error.message, 'danger');
+        })
+        .finally(() => {
+            loading.style.display = 'none';
+        });
+    });
+
+    function showAlert(message, type) {
+        result.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>`;
+    }
+});
+</script>
+{% endblock %}

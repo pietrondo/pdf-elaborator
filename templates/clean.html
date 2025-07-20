@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Pulisci PDF - PDF Elaborator{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="fas fa-eraser me-2"></i>Pulisci PDF</h4>
+            </div>
+            <div class="card-body">
+                <form id="cleanForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Seleziona file PDF da pulire:</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".pdf" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="remove_text" class="form-label">Testo da rimuovere (opzionale):</label>
+                        <input type="text" class="form-control" id="remove_text" name="remove_text" 
+                               placeholder="es. Nome Cognome, CONFIDENZIALE, etc.">
+                        <div class="form-text">Inserisci testo specifico da cercare e rimuovere dal PDF</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="remove_watermarks" name="remove_watermarks">
+                            <label class="form-check-label" for="remove_watermarks">
+                                Rimuovi watermark e annotazioni
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="remove_metadata" name="remove_metadata" checked>
+                            <label class="form-check-label" for="remove_metadata">
+                                Rimuovi metadati (autore, creatore, etc.)
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="pdfInfo" class="mb-3"></div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-eraser me-2"></i>Pulisci PDF
+                        </button>
+                    </div>
+                </form>
+
+                <div id="loading" class="text-center mt-3" style="display: none;">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Elaborazione in corso...</span>
+                    </div>
+                    <p class="mt-2">Pulendo il PDF, attendere...</p>
+                </div>
+
+                <div id="result" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <div class="alert alert-warning">
+                <h6><i class="fas fa-exclamation-triangle me-2"></i>Importante:</h6>
+                <ul class="mb-0">
+                    <li>La rimozione del testo è limitata e potrebbe non funzionare con tutti i PDF</li>
+                    <li>I watermark complessi potrebbero richiedere elaborazione manuale</li>
+                    <li>Sempre verificare il risultato prima dell'uso</li>
+                    <li>Alcuni PDF protetti potrebbero non essere modificabili</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('cleanForm');
+    const fileInput = document.getElementById('file');
+    const pdfInfo = document.getElementById('pdfInfo');
+    const loading = document.getElementById('loading');
+    const result = document.getElementById('result');
+
+    fileInput.addEventListener('change', function() {
+        if (this.files.length > 0) {
+            analyzePDF();
+        } else {
+            pdfInfo.innerHTML = '';
+        }
+    });
+
+    function analyzePDF() {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        fetch('/api/info', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            let html = '<div class="alert alert-info"><h6>Informazioni PDF:</h6><ul class="mb-0">';
+            html += `<li>Pagine: ${data.num_pages}</li>`;
+            html += `<li>Dimensione: ${(data.file_size / 1024 / 1024).toFixed(2)} MB</li>`;
+            
+            if (data.metadata && Object.keys(data.metadata).length > 0) {
+                html += '<li>Metadati presenti:';
+                html += '<ul>';
+                for (const [key, value] of Object.entries(data.metadata)) {
+                    if (value) {
+                        html += `<li>${key.replace('/', '')}: ${value}</li>`;
+                    }
+                }
+                html += '</ul></li>';
+            }
+            html += '</ul></div>';
+            
+            pdfInfo.innerHTML = html;
+        })
+        .catch(error => {
+            pdfInfo.innerHTML = `<div class="alert alert-warning">Impossibile analizzare il PDF: ${error.message}</div>`;
+        });
+    }
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(form);
+
+        loading.style.display = 'block';
+        result.innerHTML = '';
+
+        fetch('/api/clean', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.blob();
+            } else {
+                return response.json().then(data => {
+                    throw new Error(data.error || 'Errore durante la pulizia');
+                });
+            }
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'cleaned.pdf';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showAlert('PDF pulito con successo! Il download dovrebbe iniziare automaticamente.', 'success');
+        })
+        .catch(error => {
+            showAlert(error.message, 'danger');
+        })
+        .finally(() => {
+            loading.style.display = 'none';
+        });
+    });
+
+    function showAlert(message, type) {
+        result.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>`;
+    }
+});
+</script>
+{% endblock %}
