@@ -2,6 +2,11 @@ import PyPDF2
 import re
 from PyPDF2 import PdfReader, PdfWriter
 import os
+import fitz  # PyMuPDF
+from pdf2image import convert_from_path
+import base64
+from io import BytesIO
+from PIL import Image
 
 class PDFProcessor:
     def __init__(self):
@@ -122,3 +127,64 @@ class PDFProcessor:
                 pages.append(int(part))
         
         return sorted(list(set(pages)))  # Remove duplicates and sort
+
+    def convert_pdf_to_images(self, input_path, dpi=150):
+        """Converte le pagine del PDF in immagini base64"""
+        try:
+            # Converte PDF in immagini usando pdf2image
+            images = convert_from_path(input_path, dpi=dpi)
+            image_data = []
+            
+            for i, image in enumerate(images):
+                # Converti l'immagine in base64
+                buffered = BytesIO()
+                image.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                
+                image_data.append({
+                    'page': i + 1,
+                    'width': image.width,
+                    'height': image.height,
+                    'data': f"data:image/png;base64,{img_str}"
+                })
+            
+            return image_data
+        except Exception as e:
+            raise Exception(f"Errore nella conversione PDF to immagini: {str(e)}")
+
+    def clean_pdf_with_areas(self, input_path, output_path, areas_to_remove):
+        """Rimuove aree specifiche dal PDF basate su coordinate"""
+        try:
+            # Apri il PDF con PyMuPDF per operazioni avanzate
+            doc = fitz.open(input_path)
+            
+            for page_num, areas in areas_to_remove.items():
+                page = doc.load_page(page_num - 1)  # PyMuPDF usa indici 0-based
+                
+                for area in areas:
+                    # Converti le coordinate dal canvas alle coordinate PDF
+                    x1, y1, x2, y2 = area['x1'], area['y1'], area['x2'], area['y2']
+                    canvas_width, canvas_height = area['canvas_width'], area['canvas_height']
+                    
+                    # Ottieni le dimensioni della pagina PDF
+                    pdf_rect = page.rect
+                    pdf_width, pdf_height = pdf_rect.width, pdf_rect.height
+                    
+                    # Scala le coordinate
+                    pdf_x1 = (x1 / canvas_width) * pdf_width
+                    pdf_y1 = (y1 / canvas_height) * pdf_height
+                    pdf_x2 = (x2 / canvas_width) * pdf_width
+                    pdf_y2 = (y2 / canvas_height) * pdf_height
+                    
+                    # Crea un rettangolo per coprire l'area
+                    rect = fitz.Rect(pdf_x1, pdf_y1, pdf_x2, pdf_y2)
+                    
+                    # Aggiungi un rettangolo bianco per coprire l'area
+                    page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1))
+            
+            # Salva il PDF modificato
+            doc.save(output_path)
+            doc.close()
+            
+        except Exception as e:
+            raise Exception(f"Errore nella rimozione delle aree: {str(e)}")

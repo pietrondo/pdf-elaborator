@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+
+{% block title %}Pulizia Avanzata PDF - PDF Elaborator{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="fas fa-paint-brush me-2"></i>Pulizia Avanzata PDF</h4>
+                <small>Seleziona le aree da rimuovere direttamente sul PDF</small>
+            </div>
+            <div class="card-body">
+                
+                <!-- Step 1: Upload file -->
+                <div id="uploadStep" class="step-section">
+                    <h5><i class="fas fa-upload me-2"></i>Passo 1: Carica il PDF</h5>
+                    <form id="uploadForm" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <input type="file" class="form-control" id="pdfFile" name="file" accept=".pdf" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-upload me-2"></i>Carica e Visualizza PDF
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Step 2: Mark areas -->
+                <div id="markingStep" class="step-section" style="display: none;">
+                    <h5><i class="fas fa-paint-brush me-2"></i>Passo 2: Segna le aree da rimuovere</h5>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="btn-group" role="group">
+                                <button id="markMode" class="btn btn-danger active">
+                                    <i class="fas fa-highlighter me-2"></i>Modalità Selezione
+                                </button>
+                                <button id="clearMode" class="btn btn-warning">
+                                    <i class="fas fa-eraser me-2"></i>Cancella Tutto
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <button id="processBtn" class="btn btn-success">
+                                <i class="fas fa-check me-2"></i>Elabora PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- PDF Viewer Container -->
+                    <div id="pdfContainer" class="pdf-container">
+                        <div id="loadingSpinner" class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Caricamento...</span>
+                            </div>
+                            <p class="mt-2">Conversione PDF in corso...</p>
+                        </div>
+                        
+                        <div id="pdfPages" class="pdf-pages"></div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Processing -->
+                <div id="processingStep" class="step-section" style="display: none;">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-success" role="status">
+                            <span class="visually-hidden">Elaborazione...</span>
+                        </div>
+                        <h5 class="mt-3">Elaborazione del PDF in corso...</h5>
+                        <p>Rimozione delle aree selezionate...</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alert container -->
+<div id="alertContainer" class="mt-3"></div>
+
+<style>
+.step-section {
+    margin-bottom: 2rem;
+}
+
+.pdf-container {
+    border: 2px solid #dee2e6;
+    border-radius: 0.375rem;
+    max-height: 70vh;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+}
+
+.pdf-page {
+    position: relative;
+    margin: 20px auto;
+    display: block;
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    background: white;
+}
+
+.pdf-canvas {
+    display: block;
+    cursor: crosshair;
+}
+
+.pdf-canvas.marking {
+    cursor: crosshair;
+}
+
+.page-number {
+    position: absolute;
+    top: -30px;
+    left: 0;
+    background: #007bff;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.marked-area {
+    position: absolute;
+    background-color: rgba(255, 0, 0, 0.3);
+    border: 2px solid #ff0000;
+    pointer-events: none;
+}
+
+.btn-group .btn.active {
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.alert-floating {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1050;
+    min-width: 300px;
+}
+</style>
+
+<script>
+let currentFileId = null;
+let isMarkingMode = true;
+let areasToRemove = {};
+let isDrawing = false;
+let startX, startY;
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Upload form handler
+    document.getElementById('uploadForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        uploadAndConvertPDF();
+    });
+
+    // Mode buttons
+    document.getElementById('markMode').addEventListener('click', function() {
+        setMarkingMode(true);
+    });
+
+    document.getElementById('clearMode').addEventListener('click', function() {
+        clearAllMarkedAreas();
+    });
+
+    // Process button
+    document.getElementById('processBtn').addEventListener('click', function() {
+        processMarkedPDF();
+    });
+});
+
+function uploadAndConvertPDF() {
+    const formData = new FormData();
+    const fileInput = document.getElementById('pdfFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        showAlert('Seleziona un file PDF', 'warning');
+        return;
+    }
+
+    formData.append('file', file);
+
+    // Show loading
+    document.getElementById('uploadStep').style.display = 'none';
+    document.getElementById('markingStep').style.display = 'block';
+
+    fetch('/api/pdf-to-images', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        currentFileId = data.file_id;
+        displayPDFPages(data.images);
+        document.getElementById('loadingSpinner').style.display = 'none';
+    })
+    .catch(error => {
+        showAlert('Errore durante il caricamento: ' + error.message, 'danger');
+        document.getElementById('uploadStep').style.display = 'block';
+        document.getElementById('markingStep').style.display = 'none';
+    });
+}
+
+function displayPDFPages(images) {
+    const container = document.getElementById('pdfPages');
+    container.innerHTML = '';
+    areasToRemove = {};
+
+    images.forEach((imageData, index) => {
+        const pageDiv = document.createElement('div');
+        pageDiv.className = 'pdf-page';
+        pageDiv.style.position = 'relative';
+
+        const pageNumber = document.createElement('div');
+        pageNumber.className = 'page-number';
+        pageNumber.textContent = `Pagina ${imageData.page}`;
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdf-canvas';
+        canvas.dataset.page = imageData.page;
+
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
+
+        img.onload = function() {
+            // Scala l'immagine per adattarla al container
+            const maxWidth = container.clientWidth - 40;
+            const scale = maxWidth / img.width;
+            
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Store original dimensions for coordinate conversion
+            canvas.dataset.originalWidth = imageData.width;
+            canvas.dataset.originalHeight = imageData.height;
+            canvas.dataset.scaleFactor = scale;
+        };
+
+        img.src = imageData.data;
+
+        // Add drawing event listeners
+        addDrawingListeners(canvas);
+
+        pageDiv.appendChild(pageNumber);
+        pageDiv.appendChild(canvas);
+        container.appendChild(pageDiv);
+    });
+}
+
+function addDrawingListeners(canvas) {
+    let currentSelection = null;
+
+    canvas.addEventListener('mousedown', function(e) {
+        if (!isMarkingMode) return;
+
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        startX = e.clientX - rect.left;
+        startY = e.clientY - rect.top;
+
+        // Create selection div
+        currentSelection = document.createElement('div');
+        currentSelection.className = 'marked-area';
+        currentSelection.style.left = startX + 'px';
+        currentSelection.style.top = startY + 'px';
+        currentSelection.style.width = '0px';
+        currentSelection.style.height = '0px';
+
+        canvas.parentNode.appendChild(currentSelection);
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+        if (!isDrawing || !isMarkingMode || !currentSelection) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const currentX = e.clientX - rect.left;
+        const currentY = e.clientY - rect.top;
+
+        const left = Math.min(startX, currentX);
+        const top = Math.min(startY, currentY);
+        const width = Math.abs(currentX - startX);
+        const height = Math.abs(currentY - startY);
+
+        currentSelection.style.left = left + 'px';
+        currentSelection.style.top = top + 'px';
+        currentSelection.style.width = width + 'px';
+        currentSelection.style.height = height + 'px';
+    });
+
+    canvas.addEventListener('mouseup', function(e) {
+        if (!isDrawing || !isMarkingMode || !currentSelection) return;
+
+        isDrawing = false;
+
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+
+        // Only save if the selection has a meaningful size
+        if (Math.abs(endX - startX) > 5 && Math.abs(endY - startY) > 5) {
+            saveMarkedArea(canvas, startX, startY, endX, endY);
+        } else {
+            // Remove the selection if it's too small
+            currentSelection.remove();
+        }
+
+        currentSelection = null;
+    });
+}
+
+function saveMarkedArea(canvas, x1, y1, x2, y2) {
+    const pageNum = parseInt(canvas.dataset.page);
+    
+    if (!areasToRemove[pageNum]) {
+        areasToRemove[pageNum] = [];
+    }
+
+    // Ensure coordinates are in the right order
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxX = Math.max(x1, x2);
+    const maxY = Math.max(y1, y2);
+
+    areasToRemove[pageNum].push({
+        x1: minX,
+        y1: minY,
+        x2: maxX,
+        y2: maxY,
+        canvas_width: canvas.width,
+        canvas_height: canvas.height
+    });
+
+    console.log(`Area marked on page ${pageNum}:`, {x1: minX, y1: minY, x2: maxX, y2: maxY});
+}
+
+function clearAllMarkedAreas() {
+    // Remove all marked area divs
+    document.querySelectorAll('.marked-area').forEach(area => area.remove());
+    
+    // Clear the areas data
+    areasToRemove = {};
+    
+    showAlert('Tutte le aree segnate sono state cancellate', 'info');
+}
+
+function setMarkingMode(marking) {
+    isMarkingMode = marking;
+    
+    document.getElementById('markMode').classList.toggle('active', marking);
+    
+    const canvases = document.querySelectorAll('.pdf-canvas');
+    canvases.forEach(canvas => {
+        canvas.style.cursor = marking ? 'crosshair' : 'default';
+        canvas.classList.toggle('marking', marking);
+    });
+}
+
+function processMarkedPDF() {
+    if (!currentFileId) {
+        showAlert('Nessun file caricato', 'danger');
+        return;
+    }
+
+    if (Object.keys(areasToRemove).length === 0) {
+        showAlert('Nessuna area selezionata. Seleziona almeno un\'area da rimuovere.', 'warning');
+        return;
+    }
+
+    // Show processing step
+    document.getElementById('markingStep').style.display = 'none';
+    document.getElementById('processingStep').style.display = 'block';
+
+    fetch('/api/clean-with-areas', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            file_id: currentFileId,
+            areas_to_remove: areasToRemove
+        })
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.blob();
+        } else {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Errore durante l\'elaborazione');
+            });
+        }
+    })
+    .then(blob => {
+        // Download the processed file
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cleaned_pdf_advanced.pdf';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showAlert('PDF pulito con successo!', 'success');
+        
+        // Reset to upload step
+        setTimeout(() => {
+            resetToUploadStep();
+        }, 2000);
+    })
+    .catch(error => {
+        showAlert('Errore durante l\'elaborazione: ' + error.message, 'danger');
+        document.getElementById('markingStep').style.display = 'block';
+        document.getElementById('processingStep').style.display = 'none';
+    });
+}
+
+function resetToUploadStep() {
+    document.getElementById('processingStep').style.display = 'none';
+    document.getElementById('markingStep').style.display = 'none';
+    document.getElementById('uploadStep').style.display = 'block';
+    
+    // Reset form and data
+    document.getElementById('uploadForm').reset();
+    document.getElementById('pdfPages').innerHTML = '';
+    document.getElementById('loadingSpinner').style.display = 'block';
+    
+    currentFileId = null;
+    areasToRemove = {};
+}
+
+function showAlert(message, type) {
+    const alertContainer = document.getElementById('alertContainer');
+    
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-floating alert-dismissible fade show`;
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    alertContainer.appendChild(alert);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alert.parentNode) {
+            alert.remove();
+        }
+    }, 5000);
+}
+</script>
+
+{% endblock %}

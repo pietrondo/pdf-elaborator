@@ -32,7 +32,12 @@
                         </div>
                         <h5 class="card-title">Pulisci PDF</h5>
                         <p class="card-text">Rimuovi informazioni sensibili e watermark</p>
-                        <a href="{{ url_for('clean_page') }}" class="btn btn-success">Inizia</a>
+                        <div class="d-grid gap-2">
+                            <a href="{{ url_for('clean_page') }}" class="btn btn-success">Pulizia Classica</a>
+                            <a href="{{ url_for('clean_advanced_page') }}" class="btn btn-outline-success">
+                                <i class="fas fa-paint-brush me-1"></i>Pulizia Avanzata
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -6,8 +6,15 @@
 <div class="row">
     <div class="col-md-8 mx-auto">
         <div class="card shadow">
-            <div class="card-header bg-success text-white">
-                <h4 class="mb-0"><i class="fas fa-eraser me-2"></i>Pulisci PDF</h4>
+            <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                <div>
+                    <h4 class="mb-0"><i class="fas fa-eraser me-2"></i>Pulisci PDF - Modalità Classica</h4>
+                </div>
+                <div>
+                    <a href="{{ url_for('clean_advanced_page') }}" class="btn btn-outline-light btn-sm">
+                        <i class="fas fa-paint-brush me-1"></i>Pulizia Avanzata
+                    </a>
+                </div>
             </div>
             <div class="card-body">
                 <form id="cleanForm" enctype="multipart/form-data">

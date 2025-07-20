@@ -34,6 +34,10 @@ def merge_page():
 def clean_page():
     return render_template('clean.html')
 
+@app.route('/clean-advanced')
+def clean_advanced_page():
+    return render_template('clean_advanced.html')
+
 @app.route('/pages')
 def pages_page():
     return render_template('pages.html')
@@ -169,6 +173,72 @@ def get_pdf_info():
     
     except Exception as e:
         return jsonify({'error': f'Errore durante l\'analisi: {str(e)}'}), 500
+
+@app.route('/api/pdf-to-images', methods=['POST'])
+def pdf_to_images():
+    """Converte PDF in immagini per la visualizzazione"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'Nessun file selezionato'}), 400
+        
+        file = request.files['file']
+        if not file or not allowed_file(file.filename):
+            return jsonify({'error': 'File PDF non valido'}), 400
+        
+        # Save uploaded file temporarily
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join(app.config['TEMP_FOLDER'], f"{uuid.uuid4()}_{filename}")
+        file.save(temp_path)
+        
+        # Convert to images
+        images = pdf_processor.convert_pdf_to_images(temp_path)
+        
+        # Store the file path in session or return it for future use
+        file_id = str(uuid.uuid4())
+        temp_files_map = getattr(app, 'temp_files_map', {})
+        temp_files_map[file_id] = temp_path
+        app.temp_files_map = temp_files_map
+        
+        return jsonify({
+            'file_id': file_id,
+            'images': images
+        })
+    
+    except Exception as e:
+        return jsonify({'error': f'Errore durante la conversione: {str(e)}'}), 500
+
+@app.route('/api/clean-with-areas', methods=['POST'])
+def clean_with_areas():
+    """Pulisce il PDF rimuovendo aree specifiche segnalate dall'utente"""
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        areas_to_remove = data.get('areas_to_remove', {})
+        
+        if not file_id:
+            return jsonify({'error': 'ID file mancante'}), 400
+        
+        # Recupera il file temporaneo
+        temp_files_map = getattr(app, 'temp_files_map', {})
+        if file_id not in temp_files_map:
+            return jsonify({'error': 'File non trovato o scaduto'}), 400
+        
+        input_path = temp_files_map[file_id]
+        
+        # Genera path per il file pulito
+        output_path = os.path.join(app.config['TEMP_FOLDER'], f"cleaned_areas_{uuid.uuid4()}.pdf")
+        
+        # Pulisci il PDF con le aree specificate
+        pdf_processor.clean_pdf_with_areas(input_path, output_path, areas_to_remove)
+        
+        # Pulisci il file temporaneo di input
+        os.remove(input_path)
+        del temp_files_map[file_id]
+        
+        return send_file(output_path, as_attachment=True, download_name='cleaned_with_areas.pdf')
+    
+    except Exception as e:
+        return jsonify({'error': f'Errore durante la pulizia: {str(e)}'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
