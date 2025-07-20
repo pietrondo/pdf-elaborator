@@ -159,12 +159,18 @@ class PDFProcessor:
             doc = fitz.open(input_path)
             
             for page_num, areas in areas_to_remove.items():
+                # Converti page_num in intero se è una stringa
+                page_num = int(page_num) if isinstance(page_num, str) else page_num
                 page = doc.load_page(page_num - 1)  # PyMuPDF usa indici 0-based
                 
                 for area in areas:
-                    # Converti le coordinate dal canvas alle coordinate PDF
-                    x1, y1, x2, y2 = area['x1'], area['y1'], area['x2'], area['y2']
-                    canvas_width, canvas_height = area['canvas_width'], area['canvas_height']
+                    # Converti le coordinate dal canvas alle coordinate PDF (assicurati che siano numeri)
+                    x1 = float(area['x1']) if isinstance(area['x1'], str) else area['x1']
+                    y1 = float(area['y1']) if isinstance(area['y1'], str) else area['y1']
+                    x2 = float(area['x2']) if isinstance(area['x2'], str) else area['x2']
+                    y2 = float(area['y2']) if isinstance(area['y2'], str) else area['y2']
+                    canvas_width = float(area['canvas_width']) if isinstance(area['canvas_width'], str) else area['canvas_width']
+                    canvas_height = float(area['canvas_height']) if isinstance(area['canvas_height'], str) else area['canvas_height']
                     
                     # Ottieni le dimensioni della pagina PDF
                     pdf_rect = page.rect
